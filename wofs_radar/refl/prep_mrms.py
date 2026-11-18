@@ -99,7 +99,8 @@ _grid_dict = {
               'thin_zeros'      : 1,
               'halo_footprint'  : 5,
               'vert_halo_fp'    : 1,
-              'obs_grid_spacing': 5,
+              'obs_grid_spacing': 5, #WoFS-Retro
+              #'obs_grid_spacing': 3, #MPAS-WoFS
               'ns_radius'       : 421.0,
               'ew_radius'       : 411.0,
               'max_height'      : 10000.,
@@ -107,13 +108,14 @@ _grid_dict = {
               'min_dbz_analysis': 15.0,
               'min_dbz_zeros'   : 15.0,
               'reflectivity'    : 7.0,
-              '0reflectivity'   : 5.0, 
+              '0reflectivity'   : 5.0, #WoFS-Retro
+              #'0reflectivity'   : 2.0, #MPAS-WoFS
               'levels'          : ['00.50','01.00','01.50','02.00','02.50','03.00', \
                                    '04.00','05.00','06.00','07.00','08.00','09.00','10.00'],
               'QC_info'         : [[15.,5.],[20.,1.]],
              }
 
-_obs_errors = { 'reflectivity'    : 7.0, '0reflectivity'   : 5.0 } 
+_obs_errors = { 'reflectivity'    : 7.0, '0reflectivity'   : 5.0 }
 
 #=========================================================================================
 # Class variable used as container
@@ -285,6 +287,216 @@ def Get_Closest_Elevations_AWS(anal_time, grid_dict=_grid_dict, window=_dt_windo
         ObsFileList.append(path+file_to_download)
 
     return ObsFileList
+import os
+import re
+import glob
+from datetime import datetime, timedelta
+from operator import itemgetter
+
+
+def Get_Closest_Elevations_Local(
+#def Get_Closest_Elevations_NCEP(
+        anal_time,
+        grid_dict=_grid_dict,
+        window=_dt_window,
+        data_root='/scratch4/NCEPDEV/fv3-cam/Jianping.Huang/WoFS/sorc/frdd-wofs-obs-radar/test_mrms'):
+    """
+    Get closest local MRMS reflectivity files.
+
+    Local directory structure:
+
+        /test_mrms/YYYYMMDD/
+            MRMS_MergedReflectivityQC_ELEV_YYYYMMDD-HHMMSS.grib2.gz
+
+    Example:
+
+        /test_mrms/20260916/
+            MRMS_MergedReflectivityQC_00.50_20260916-042642.grib2.gz
+
+    Parameters
+    ----------
+    anal_time : datetime
+        Analysis time.
+
+    grid_dict : dict
+        Dictionary containing the requested elevation levels.
+        Expected key:
+            grid_dict['levels']
+
+    window : tuple/list
+        Time window in minutes relative to anal_time.
+
+        len(window) == 1:
+            +/- window[0]
+
+        len(window) == 2:
+            anal_time + window[0] --> anal_time + window[1]
+
+    data_root : str
+        Root directory containing YYYYMMDD directories.
+
+    Returns
+    -------
+    ObsFileList : list
+        List containing the closest local MRMS files for each
+        requested elevation.
+    """
+
+    ObsFileList = []
+
+    target_time = anal_time
+
+    # --------------------------------------------------------
+    # TIME WINDOW
+    # --------------------------------------------------------
+    if len(window) == 1:
+
+        start = target_time - timedelta(minutes=window[0])
+        end = target_time + timedelta(minutes=window[0])
+
+    elif len(window) == 2:
+
+        start = target_time + timedelta(minutes=window[0])
+        end = target_time + timedelta(minutes=window[1])
+
+    else:
+        raise ValueError(
+            "window must contain either 1 or 2 values."
+        )
+
+    # --------------------------------------------------------
+    # REQUESTED ELEVATION ANGLES
+    # --------------------------------------------------------
+    elev_list = grid_dict['levels']
+
+    # --------------------------------------------------------
+    # SEARCH LOCAL FILES
+    # --------------------------------------------------------
+    for ea in elev_list:
+
+        print(
+            f'Now searching local MRMS refl data '
+            f'for elevation angle: {ea}'
+        )
+
+        # ----------------------------------------------------
+        # Convert elevation to filename format
+        #
+        # Example:
+        #     0.5  -> 00.50
+        #     1.0  -> 01.00
+        #     2.0  -> 02.00
+        # ----------------------------------------------------
+        elev_string = f'{float(ea):05.2f}'
+
+        # Directory based on analysis date
+        date_dir = os.path.join(
+            data_root,
+            target_time.strftime('%Y%m%d')
+        )
+
+        # Search pattern
+        search_pattern = os.path.join(
+            date_dir,
+            f'MRMS_MergedReflectivityQC_{elev_string}_'
+            f'*.grib2.gz'
+        )
+        print(f"Search pattern: {search_pattern}")
+ # /scratch4/NCEPDEV/fv3-cam/Jianping.Huang/WoFS/sorc/frdd-wofs-obs-radar/test_mrms/20260916/MRMS_MergedReflectivityQC_10.00_20260916-044042.grib2.gz
+
+        files = glob.glob(search_pattern)
+
+        if not files:
+            print(
+                f'   WARNING: No files found for elevation '
+                f'{elev_string} in {date_dir}'
+            )
+            continue
+
+        # ----------------------------------------------------
+        # FIND FILES WITHIN TIME WINDOW
+        # ----------------------------------------------------
+        valid_files = []
+
+        for filename in files:
+
+            basename = os.path.basename(filename)
+
+            # Example filename:
+            #
+            # MRMS_MergedReflectivityQC_00.50_
+            # 20260916-042642.grib2.gz
+            #
+            pattern = (
+                r'^MRMS_MergedReflectivityQC_'
+                r'(?P<elev>\d{2}\.\d{2})_'
+                r'(?P<date>\d{8})-'
+                r'(?P<time>\d{6})\.grib2\.gz$'
+            )
+
+            m = re.match(pattern, basename)
+
+            if m is None:
+                continue
+
+            # ------------------------------------------------
+            # Convert filename timestamp to datetime
+            # ------------------------------------------------
+            file_time = datetime.strptime(
+                m.group('date') + m.group('time'),
+                '%Y%m%d%H%M%S'
+            )
+
+            # ------------------------------------------------
+            # Check whether file is inside time window
+            # ------------------------------------------------
+            if start <= file_time <= end:
+
+                time_difference = abs(
+                    (target_time - file_time).total_seconds()
+                )
+
+                valid_files.append(
+                    (
+                        file_time,
+                        time_difference,
+                        filename
+                    )
+                )
+
+        # ----------------------------------------------------
+        # NO VALID FILES
+        # ----------------------------------------------------
+        if not valid_files:
+
+            print(
+                f'   WARNING: No valid files found for '
+                f'{elev_string} within '
+                f'{start} --> {end}'
+            )
+
+            continue
+
+        # ----------------------------------------------------
+        # SORT BY DISTANCE FROM ANALYSIS TIME
+        # ----------------------------------------------------
+        sorted_files = sorted(
+            valid_files,
+            key=itemgetter(1)
+        )
+
+        # ----------------------------------------------------
+        # CLOSEST FILE
+        # ----------------------------------------------------
+        closest_file = sorted_files[0][2]
+
+        print(
+            f'   Selected: {os.path.basename(closest_file)}'
+        )
+
+        ObsFileList.append(closest_file)
+
+    return ObsFileList
 #=========================================================================================
 def Get_Closest_Elevations_NCEP(anal_time, grid_dict=_grid_dict, window=_dt_window):
     """
@@ -377,9 +589,19 @@ def load_mrms_NCEP(infile):
 
     #De-compress the bytes of the grib2 file and load in xarray
     
-    response = urllib.request.urlopen(infile)
-    compressed_file = response.read()
-    
+    #response = urllib.request.urlopen(infile)
+    #compressed_file = response.read()
+    if infile.startswith(('http://', 'https://')):
+    # Read from URL
+        response = urllib.request.urlopen(infile)
+        compressed_file = response.read()
+
+    else:
+    # Read from local file
+        with open(infile, 'rb') as f:
+            compressed_file = f.read()
+
+
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=True) as f:
         f.write(gz.decompress(compressed_file))
         mrms_load = xr.open_mfdataset(f.name, engine='pynio', chunks=100, preprocess=lambda x: x.load())
@@ -1176,12 +1398,27 @@ def run(options):
        a_time = datetime(year, mon, day, hour, minute, 0)
 
 #-------------------------------------------------------------------------------
+# Print all current options to a file
+   with open("options.txt", "w") as f:
+       for name, value in vars(options).items():
+           f.write(f"{name} = {value}\n")
+   import configparser
+   config = configparser.ConfigParser()
+
+   config["OPTIONS"] = {}
+
+   for name, value in vars(options).items():
+       config["OPTIONS"][name] = str(value)
+
+   with open("options.cfg", "w") as f:
+       config.write(f)
 
 # if realtime, now find the file created within _dt_window of analysis time
 
    if options.realtime != None:
 
        try:
+           #in_filenames = Get_Closest_Elevations_Local(a_time, _grid_dict, _dt_window)
            in_filenames = Get_Closest_Elevations_NCEP(a_time, _grid_dict, _dt_window)
        except:
            print("\n Prep_MRMS: NCEP data unavailable. Attempting with AWS")
@@ -1200,7 +1437,8 @@ def run(options):
            return 1
 
    else:
-       in_filenames = Get_Closest_Elevations_AWS(a_time, _grid_dict, _dt_window)
+       in_filenames = Get_Closest_Elevations_Local(a_time, _grid_dict, _dt_window)
+       #in_filenames = Get_Closest_Elevations_AWS(a_time, _grid_dict, _dt_window)
        out_filenames = []
        print("\n Prep_MRMS:  Processing %d files in the directory:  %s\n" % (len(in_filenames), options.dir))
        print("\n Prep_MRMS:  First file is %s\n" % (in_filenames[0]))

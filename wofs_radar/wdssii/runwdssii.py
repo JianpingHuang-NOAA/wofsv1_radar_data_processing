@@ -4,7 +4,7 @@ import os
 import time
 import shutil
 import threading
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def run_ldm2netcdf(radar, startdate, inloc, outloc, prefix):
 
@@ -281,7 +281,15 @@ def runwdssii(radar,startdate,inloc,outloc,soundingloc,prefix):
     #updatecode = run_makeindex(outloc)
 
     return 0
+
 def main():
+
+    if len(sys.argv) not in (6, 7):
+        print(
+            "Usage: python runwdss.py "
+            "startdate inloc outloc soundingloc prefix [radar]"
+        )
+        return 1
 
     args = sys.argv
 
@@ -290,37 +298,78 @@ def main():
     outloc = args[3]
     soundingloc = args[4]
     prefix = args[5]
-    radars = os.listdir(inloc+'/')
-    #radars = ['KBOX','KFCX','KLWX','KILN','KOKX']
-    #maxthreads = 10 
-    maxthreads = len(radars)
 
-    for radar in radars:
-        print(radar)
-        outloc1 = outloc+'/'+radar
-        runwdssii(radar,startdate,inloc,outloc1,soundingloc,prefix)
-    sys.exit(0)
+    # Use specified radar if provided; otherwise process all radars
+    if len(args) == 7:
+        #radars = [r.strip() for r in args[6].split(",") if r.strip()]
+        radar = args[6]
 
-    for radar in radars:
-        if threading.active_count() <= maxthreads:
+        if not os.path.isdir(os.path.join(inloc, radar)):
+            print(f"Error: radar '{radar}' not found in {inloc}")
+            return 1
 
-            print(radar) 
-            outloc1 = outloc+'/'+radar
-            t = threading.Thread(target=runwdssii,name=threading.active_count(),args=(radar,startdate,inloc,outloc1,soundingloc,prefix))
-            t.start()
-            time.sleep(2)
-        else:
-            while threading.active_count() > maxthreads:
-                time.sleep(300)
-            print(radar)
-            outloc1 = outloc+'/'+radar
-            t = threading.Thread(target=runwdssii,name=threading.active_count(),args=(radar,startdate,inloc,outloc1,soundingloc,prefix))
-            t.start()
+        radars = [radar]
+    else:
+        # Default behavior: process all radars alphabetically
+        radars = sorted(
+            name for name in os.listdir(inloc)
+            if os.path.isdir(os.path.join(inloc, name))
+        )
+    print(f"Input location: {inloc}")
+    print(f"Radars found: {radars}")
 
-    sys.exit(0)
+    if not radars:
+        print("No radars found. Exiting.")
+        return 0
+
+    # Maximum number of concurrent radar jobs
+    #maxthreads = min(4, len(radars))
+    maxthreads = min(
+        int(os.environ.get("SLURM_CPUS_PER_TASK", "1")),
+        len(radars)
+    )
+    print(f"Maximum concurrent jobs: {maxthreads}")
+
+    def process_radar(radar):
+        outloc1 = os.path.join(outloc, radar)
+
+        print(f"Starting radar: {radar}", flush=True)
+
+        runwdssii(
+            radar,
+            startdate,
+            inloc,
+            outloc1,
+            soundingloc,
+            prefix
+        )
+
+        print(f"Finished radar: {radar}", flush=True)
+
+    # Run radar jobs concurrently
+    with ThreadPoolExecutor(max_workers=maxthreads) as executor:
+
+        futures = {
+            executor.submit(process_radar, radar): radar
+            for radar in radars
+        }
+
+        for future in as_completed(futures):
+            radar = futures[future]
+
+            try:
+                future.result()
+            except Exception as exc:
+                print(
+                    f"ERROR processing radar {radar}: {exc}",
+                    flush=True
+                )
+
+    print("All radar jobs have finished.", flush=True)
+
     return 0
 
-if __name__ == '__main__':
-    main()
 
+if __name__ == "__main__":
+    sys.exit(main())
 

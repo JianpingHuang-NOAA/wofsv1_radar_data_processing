@@ -105,7 +105,8 @@ truelat1, truelat2 = 30.0, 60.0
 
 # Parameter dict for Gridding
 _grid_dict = {
-              'grid_spacing_xy' : 5000.,         # meters
+              #'grid_spacing_xy' : 5000.,         # meters WoFS-Retro
+              'grid_spacing_xy' : 3000.,         # meters MPAS-WoFS
               'domain_radius_xy': 150000.,       # meters
               'anal_method'     : 'Cressman',    # options are Cressman, Barnes (1-pass)
               'ROI'             : 1000.,         # Cressman ~ analysis_grid * sqrt(2), Barnes ~ largest data spacing in radar
@@ -587,6 +588,10 @@ def plot_gridded(ref, vel, sweep, fsuffix=None, dir=".", shapefiles=None, intera
     """
         Create two panel plot of processed, gridded velocity and reflectivity data
     """
+    # Exit if sweep is outside the available ref.data range
+    if sweep < 0 or sweep >= len(ref.data):
+        return
+
     # Set up colormaps
 
     from matplotlib.colors import BoundaryNorm
@@ -939,6 +944,16 @@ def run(radar, run_time, options):
     t0 = time.perf_counter()
 
     tilts = list(getRadarProducts(radar, run_time, options.debug, options.input_refl, options.input_vel))
+# DEBUG: Print loaded file paths/directories
+    print(f"\n[DEBUG] Total tilt files returned for radar {radar}: {len(tilts)}", flush=True)
+    for t in tilts:
+        # If 'filename' or 'path' key exists in dictionary:
+        file_path = t.get('filename') or t.get('file') or t.get('path')
+        if file_path:
+            print(f"  --> Tilt {t.get('tilt')}: {file_path}", flush=True)
+        else:
+            # Inspect full tilt item keys if the path key name is unknown
+            print(f"  --> Tilt item keys: {t.keys()}", flush=True)
 
     volumes = list(map(lambda a: a['radar'], sorted(tilts, key=lambda a: a['tilt'])))
 

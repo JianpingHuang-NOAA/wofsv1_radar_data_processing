@@ -12,6 +12,37 @@ from ..utils.SparseRadialSet import decompress_sparse
 import matplotlib.pyplot as plt
 
 _debug_ = False
+
+import os
+
+def debug_path(label, path):
+    exists = os.path.exists(path)
+    status = "EXISTS" if exists else "MISSING"
+    print(f"[DEBUG PATH] [{status}] {label}: {path}", flush=True)
+    return path
+
+# Updated helper functions wrapped with debugging:
+
+def __get_radar_time_path__(radar, run_time, rass_input):
+    p = os.path.join(rass_input.format(run_time.strftime("%Y%m%d")), radar)
+    return debug_path("Radar Time Path", p)
+
+def __get_path_reflectivity__(radar, run_time, rass_input, rass_input_refl):
+    p = os.path.join(__get_radar_time_path__(radar, run_time, rass_input), rass_input_refl)
+    return debug_path("Reflectivity Path", p)
+
+def __get_path_reflectivity_tilt__(radar, run_time, tilt, rass_input, rass_input_refl):
+    p = os.path.join(__get_path_reflectivity__(radar, run_time, rass_input, rass_input_refl), tilt)
+    return debug_path("Reflectivity Tilt Path", p)
+
+def __get_path_velocity__(radar, run_time, rass_input, rass_input_vel):
+    p = os.path.join(__get_radar_time_path__(radar, run_time, rass_input), rass_input_vel)
+    return debug_path("Velocity Path", p)
+
+def __get_path_velocity_tilt__(radar, run_time, tilt, rass_input, rass_input_vel):
+    p = os.path.join(__get_path_velocity__(radar, run_time, rass_input, rass_input_vel), tilt)
+    return debug_path("Velocity Tilt Path", p)
+
 _include_tilts = [] # empty list will plot all
 
 def __get_radar_time_path__(radar, run_time, rass_input): return os.path.join(rass_input.format(run_time.strftime("%Y%m%d")), radar)
@@ -279,7 +310,53 @@ def list_abs_files(path):
         return [os.path.join(path, a) for a in os.listdir(path)]
     else: return []
 
+import re
+import datetime
+import os
+
 def getTiltProducts(radar, run_time):
+    settings = AppConfiguration.get()
+
+    # Construct the 4 search paths
+    vel_path_curr = __get_path_velocity__(radar, run_time, settings.rass_input, settings.rass_input_vel)
+    vel_path_prev = __get_path_velocity__(radar, run_time - datetime.timedelta(days=1), settings.rass_input, settings.rass_input_vel)
+
+    refl_path_curr = __get_path_reflectivity__(radar, run_time, settings.rass_input, settings.rass_input_refl)
+    refl_path_prev = __get_path_reflectivity__(radar, run_time - datetime.timedelta(days=1), settings.rass_input, settings.rass_input_refl)
+
+    # Diagnostic printing for base directories
+    print(f"\n[DEBUG getTiltProducts] Radar: {radar} | Time: {run_time}", flush=True)
+    print(f"  -> VEL Dir (Curr) : [{ 'EXISTS' if os.path.exists(vel_path_curr) else 'MISSING' }] {vel_path_curr}", flush=True)
+    print(f"  -> VEL Dir (Prev) : [{ 'EXISTS' if os.path.exists(vel_path_prev) else 'MISSING' }] {vel_path_prev}", flush=True)
+    print(f"  -> REFL Dir (Curr): [{ 'EXISTS' if os.path.exists(refl_path_curr) else 'MISSING' }] {refl_path_curr}", flush=True)
+    print(f"  -> REFL Dir (Prev): [{ 'EXISTS' if os.path.exists(refl_path_prev) else 'MISSING' }] {refl_path_prev}", flush=True)
+
+    # Gather files
+    vel_curr_files = list_rel_files(vel_path_curr)
+    vel_prev_files = list_rel_files(vel_path_prev)
+    vel_tilts = vel_curr_files + vel_prev_files
+
+    refl_curr_files = list_rel_files(refl_path_curr)
+    refl_prev_files = list_rel_files(refl_path_prev)
+    refl_tilts = refl_curr_files + refl_prev_files
+
+    print(f"  -> Found {len(vel_tilts)} VEL relative items: {vel_tilts[:5]}...", flush=True)
+    print(f"  -> Found {len(refl_tilts)} REFL relative items: {refl_tilts[:5]}...", flush=True)
+
+    # Common set intersection
+    raw_tilts = set(refl_tilts).intersection(vel_tilts)
+    print(f"  -> Intersection count: {len(raw_tilts)} items: {raw_tilts}", flush=True)
+
+    # Filtered tilts matching decimal tilt pattern
+    matched_tilts = [x for x in raw_tilts if re.match(r"[0-9]+\.[0-9]+", x)]
+    print(f"  -> Matching Tilts (matching r'[0-9]+\.[0-9]+'): {matched_tilts}", flush=True)
+
+    for tilt in matched_tilts:
+        products = list(getProducts(radar, run_time, tilt))
+        print(f"  --> Yielding Tilt [{tilt}] with {len(products)} products", flush=True)
+        yield { "tilt": tilt, "files": products }
+
+def getTiltProducts_1(radar, run_time):
     settings = AppConfiguration.get()
 
     vel_tilts = list_rel_files(__get_path_velocity__(radar, run_time, settings.rass_input, settings.rass_input_vel)) + list_rel_files(__get_path_velocity__(radar, run_time - datetime.timedelta(days = 1), settings.rass_input, settings.rass_input_vel))

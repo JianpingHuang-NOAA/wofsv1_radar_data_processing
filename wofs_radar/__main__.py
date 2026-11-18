@@ -43,6 +43,8 @@ if __name__ == "__main__":
 
     if settings.default_parallel:
         print('Running in parallel mode')
+        #print('Running in parallel mode', flush=True)
+        #logging.info('Running in parallel mode')
         with Pool(processes=len(radars)+1, maxtasksperchild=1) as pool:
             refl_func = partial(__abortable_worker__, run_refl_for_radar_time, timeout=360)
             pool.apply_async(refl_func, args = (run_time, float(options.lon), float(options.lat), options.file, options.domain, options.realtime))
@@ -55,7 +57,8 @@ if __name__ == "__main__":
             pool.join()   
     else:
         print('Running in serial mode')
-        run_refl_for_radar_time(run_time, float(options.lon), float(options.lat), options.file, options.domain, options.realtime)
+
+        #run_refl_for_radar_time(run_time, float(options.lon), float(options.lat), options.file, options.domain, options.realtime)
         for name in radars:
             run_vr_for_radar_time(run_time, name, float(options.lon), float(options.lat), options.file, options.domain)    
 
@@ -64,12 +67,12 @@ if __name__ == "__main__":
     __abortable_worker__(combine_from_pattern, '_VR_%s.nc' % run_time.strftime("%Y%m%d_%H%M"), 
         os.path.join(output_dir, run_time.strftime("%Y%m%d")), timeout=360)
 
-    try:
+    #try:
         #Shrink image size with pngquant.            
-        cmd = f"/usr/bin/pngquant --ext .png -f {output_dir}/**/*.png"
-        print(f"Running command: {cmd}")
-        os.system(cmd)
-    except:
-        raise OSError('Unable to compress the PNG file. Check that pngquant is installed!')
+        #cmd = f"/home/brian.matilla/micromamba/envs/wofs-func/bin//pngquant --ext .png -f {output_dir}/**/*.png"
+        #print(f"Running command: {cmd}")
+        #os.system(cmd)
+    #except:
+    #    raise OSError('Unable to compress the PNG file. Check that pngquant is installed!')
 
     print("\n Processing VR/REFL for time %s finished at %s" % (run_time, DT.datetime.utcnow().strftime("%H:%M:%S")))    

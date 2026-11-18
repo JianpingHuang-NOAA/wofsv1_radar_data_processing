@@ -1,4 +1,4 @@
-name: wofs-radar
+name: wofs-radar-rt
 channels:
   - conda-forge
   - defaults
@@ -17,6 +17,7 @@ dependencies:
   - basemap-data-hires=1.3.2
   - pynio=1.5.5
   - setuptools=70.1.1
+  - boto3=1.18.2
   - s3fs
   - beautifulsoup4
   - future
