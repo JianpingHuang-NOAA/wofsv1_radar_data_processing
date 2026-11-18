@@ -48,6 +48,7 @@ import netCDF4 as ncdf
 import math
 
 from cmweather import cm
+from .grib2_reader import read_mrms_gzip_bytes
 from datetime import datetime, timedelta
 from numpy import ma
 from ..utils.dart_tools import mrms_write_DART_ascii
@@ -555,60 +556,47 @@ def Get_Closest_Elevations_NCEP(anal_time, grid_dict=_grid_dict, window=_dt_wind
 
 def load_mrms_AWS(infile):
     """
-    Because MRMS files on AWS are gzipped grib2 files, we must first decompress the file
-    prior to reading it.
+    Read gzip-compressed MRMS GRIB2 data from AWS.
 
-    infile: A grib2.gz file from AWS to be read in.
+    Returns an Xarray dataset compatible with the legacy
+    MRMS reflectivity processing interface.
+    """
 
-    RETURNS: An xarray dataset with variable information and metadata
-    """ 
-
-    # Now pull the file but just read it, don't download it
     fs = s3fs.S3FileSystem(anon=True)
-    aws_obj = fs.open(infile, mode='rb')
-    compressed_file = aws_obj.read()
 
-    #De-compress the bytes of the grib2 file and load in xarray
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=True) as f:
-        f.write(gz.decompress(compressed_file))
-        mrms_load = xr.open_mfdataset(f.name, engine='pynio', chunks=100, preprocess=lambda x: x.load())
+    with fs.open(infile, mode="rb") as aws_obj:
+        compressed_file = aws_obj.read()
 
-        mrms_load.close()    
-        
-    return mrms_load 
+    return read_mrms_gzip_bytes(compressed_file)
+
+
+
+
 #=========================================================================================
 def load_mrms_NCEP(infile):
     """
-    Because MRMS files on NCEP are gzipped grib2 files, we must first decompress the file
-    prior to reading it.
+    Read gzip-compressed MRMS GRIB2 data from NCEP
+    or a local file.
 
-    infile: A grib2.gz file from NCEP to be read in.
+    Returns an Xarray dataset compatible with the legacy
+    MRMS reflectivity processing interface.
+    """
 
-    RETURNS: An xarray dataset with variable information and metadata
-    """ 
+    if infile.startswith(("http://", "https://")):
 
-    #De-compress the bytes of the grib2 file and load in xarray
-    
-    #response = urllib.request.urlopen(infile)
-    #compressed_file = response.read()
-    if infile.startswith(('http://', 'https://')):
-    # Read from URL
-        response = urllib.request.urlopen(infile)
-        compressed_file = response.read()
+        with urllib.request.urlopen(infile) as response:
+            compressed_file = response.read()
 
     else:
-    # Read from local file
-        with open(infile, 'rb') as f:
+
+        with open(infile, "rb") as f:
             compressed_file = f.read()
 
+    return read_mrms_gzip_bytes(compressed_file)
 
-    with tempfile.NamedTemporaryFile(suffix=".grib2", delete=True) as f:
-        f.write(gz.decompress(compressed_file))
-        mrms_load = xr.open_mfdataset(f.name, engine='pynio', chunks=100, preprocess=lambda x: x.load())
 
-        mrms_load.close()
 
-    return mrms_load 
+
 #=========================================================================================
 # Extract data from the AWS files
 
