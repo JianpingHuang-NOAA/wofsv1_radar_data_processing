@@ -56,7 +56,7 @@ from ..utils.cressman import *
 from pyproj import Proj
 import pylab as plt
 from mpl_toolkits.basemap import Basemap
-from pyart.graph import cm
+from cmweather import cm
 from .load_mrms_ppi import getRadarProducts
 from ..utils.obs import write_obs_seq_xarray
 from ..utils.dart_tools import opaws_write_DART_ascii

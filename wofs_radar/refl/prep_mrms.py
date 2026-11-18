@@ -47,7 +47,7 @@ from matplotlib.offsetbox import AnchoredText
 import netCDF4 as ncdf
 import math
 
-from pyart.graph import cm
+from cmweather import cm
 from datetime import datetime, timedelta
 from numpy import ma
 from ..utils.dart_tools import mrms_write_DART_ascii

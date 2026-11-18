@@ -404,7 +404,7 @@ def getRadarProducts(radar, run_time, debug = False, input_refl = 'ReflectivityD
                     "velocity",
                     sweep=0,
                     resolution="50m",
-                    cmap="pyart_balance",
+                    cmap="balance",
                 )
                 plt.savefig(f'{radar}_{tilt}_{rt}.png')
             except:
