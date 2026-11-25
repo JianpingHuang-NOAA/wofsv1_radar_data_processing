@@ -1313,6 +1313,12 @@ def write_obs_seq_xarray(field, filename=None, obs_error=None,
 
    out, attributes = obs_seq_xarray(nobs)
 
+   # Gridded MRMS reflectivity has no single radar platform.
+   for name in ("platform_lat", "platform_lon", "platform_hgt",
+                "platform_dir1", "platform_dir2", "platform_dir3",
+                "platform_nyquist"):
+       out[name].fill(0.0)
+
    nobs = 0
    nobs_clearair = 0
    
